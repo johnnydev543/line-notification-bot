@@ -1,0 +1,36 @@
+services:
+  line-alert-bot:
+    build: .
+    image: line-alert-bot:latest
+    container_name: line_alert_bot
+    restart: unless-stopped
+    environment:
+      # === LINE Messaging API 憑證 ===
+      # 前往 https://developers.line.biz/ 建立 Messaging API Channel
+      - LINE_CHANNEL_ACCESS_TOKEN=${LINE_CHANNEL_ACCESS_TOKEN}
+      - LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
+      # 推播目標 User ID (你的 LINE User ID)
+      - LINE_USER_ID=${LINE_USER_ID}
+
+      # === Grafana / Prometheus (雙向查詢用) ===
+      - GRAFANA_URL=http://grafana:3000
+      - GRAFANA_TOKEN=${GRAFANA_TOKEN:-}
+      - PROMETHEUS_URLS=http://prometheus:9090
+
+      # === 其他 ===
+      - TZ=Asia/Taipei
+      - LOG_LEVEL=INFO
+    networks:
+      - monitoring
+    ports:
+      - 5000:5000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  monitoring:
+    external: true
+    name: net_prometheus  # Change to your Grafana Docker network name
