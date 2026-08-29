@@ -1,5 +1,7 @@
 # LINE Alert Bot
 
+**English** | [中文](README.zh-TW.md)
+
 A lightweight webhook bridge that forwards **Grafana alert notifications** to **LINE Messaging API**, with optional **bidirectional interaction** (query system status from LINE chat).
 
 Since LINE Notify was deprecated in March 2025, this project uses the **LINE Messaging API** (via LINE Official Account) to deliver alert messages.
