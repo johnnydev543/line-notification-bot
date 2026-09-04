@@ -1,0 +1,1 @@
+"""Integrations: pluggable webhook adapters that turn external payloads into LINE messages."""

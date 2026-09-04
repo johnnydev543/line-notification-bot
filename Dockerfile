@@ -1,13 +1,14 @@
 FROM python:3.12-slim
 
 LABEL maintainer="johnny"
-LABEL description="Grafana Alert → LINE Messaging API webhook bridge"
+LABEL description="Line Notification Bot — generic webhook → LINE Messaging API bridge"
 
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY line_notification_bot/ ./line_notification_bot/
 COPY app.py .
 
 EXPOSE 5000

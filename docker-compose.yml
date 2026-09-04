@@ -1,25 +1,29 @@
 services:
-  line-alert-bot:
+  line-notification-bot:
     build: .
-    image: line-alert-bot:latest
-    container_name: line_alert_bot
+    image: line-notification-bot:local
+    container_name: line_notification_bot
     restart: unless-stopped
     environment:
       # === LINE Messaging API 憑證 ===
-      # 前往 https://developers.line.biz/ 建立 Messaging API Channel
       - LINE_CHANNEL_ACCESS_TOKEN=${LINE_CHANNEL_ACCESS_TOKEN}
       - LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
-      # 推播目標 User ID (你的 LINE User ID)
-      - LINE_USER_ID=${LINE_USER_ID}
+      # 推播目標（可多個，逗號分隔；相容舊的 LINE_USER_ID）
+      - LINE_TARGET_IDS=${LINE_TARGET_IDS:-}
+      - LINE_USER_ID=${LINE_USER_ID:-}
 
-      # === Grafana / Prometheus (雙向查詢用) ===
-      - GRAFANA_URL=http://grafana:3000
+      # === 整合模組（Grafana / Prometheus 為選配） ===
+      - ENABLED_INTEGRATIONS=${ENABLED_INTEGRATIONS:-}
+      - GRAFANA_URL=${GRAFANA_URL:-http://grafana:3000}
       - GRAFANA_TOKEN=${GRAFANA_TOKEN:-}
-      - PROMETHEUS_URLS=http://prometheus:9090
+      - PROMETHEUS_URLS=${PROMETHEUS_URLS:-http://prometheus:9090}
+
+      # === 通用 /notify 端點的共享密鑰（建議設定） ===
+      - NOTIFY_SECRET=${NOTIFY_SECRET:-}
 
       # === 其他 ===
-      - TZ=Asia/Taipei
-      - LOG_LEVEL=INFO
+      - TZ=${TZ:-Asia/Taipei}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     networks:
       - monitoring
     ports:

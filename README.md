@@ -1,54 +1,74 @@
-# LINE Alert Bot
+# Line Notification Bot
 
 **English** | [中文](README.zh-TW.md)
 
-A lightweight webhook bridge that forwards **Grafana alert notifications** to **LINE Messaging API**, with optional **bidirectional interaction** (query system status from LINE chat).
+A **generic, extensible notification bot** built on the **LINE Messaging API**. It accepts webhook payloads from *any* source and pushes messages to LINE, with optional **bidirectional interaction** (query things from LINE chat).
 
-Since LINE Notify was deprecated in March 2025, this project uses the **LINE Messaging API** (via LINE Official Account) to deliver alert messages.
+**Grafana / Prometheus integration is just one of the available integrations** (`monitoring`) — the bot core does not depend on any specific platform. Write your own integration in ~20 lines to connect anything else.
+
+Since LINE Notify was deprecated in March 2025, this project uses the **LINE Messaging API** (via LINE Official Account) to deliver messages.
 
 ## Features
 
-- 🔔 **One-way alert push** — Grafana webhook → LINE message
-- 💬 **Two-way interaction** — Reply `status`, `alerts`, or `help` in LINE chat to query your monitoring stack
-- 🔒 **Signature verification** — Validates LINE webhook callbacks with HMAC-SHA256
-- 🐳 **Docker-ready** — Single container, docker-compose included
-- 🏥 **Health check endpoint** — For monitoring the bot itself
+- 🔔 **Generic webhook bridge** — any JSON source → LINE message
+- 🧩 **Pluggable integrations** — drop a module in `line_notification_bot/integrations/`, auto-discovered at startup
+- 📡 **Built-in integrations**:
+  - `monitoring` — Grafana alerts → LINE, plus `status` / `alerts` chat commands
+  - `generic` — universal `/notify` endpoint for arbitrary JSON
+- 💬 **Two-way interaction** — extensible chat command framework (`help`, `ping`, `status`, `alerts`, …)
+- 👥 **Multiple push targets** — one message to many User/Group IDs
+- 🔒 **Security** — HMAC-SHA256 signature verification for LINE callbacks; optional bearer-token on `/notify`
+- 🐳 **Docker-ready** — single container, docker-compose included
+- 🏥 **Health check endpoint** — for monitoring the bot itself
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Grafana Alerting                                           │
-│    └─ Contact Point (Webhook)                               │
-│         └─ POST /push  ──────────────┐                      │
-└──────────────────────────────────────│──────────────────────┘
-                                       ▼
-                              ┌─────────────────┐
-                              │  line-alert-bot  │
-                              │  (Flask + gunicorn)│
-                              │                  │
-                              │  /push    ◄── Grafana webhook
-                              │  /callback ◄── LINE webhook
-                              │  /health  ◄── monitoring
-                              └───────┬──────────┘
-                                      │
-                          ┌───────────┴───────────┐
-                          ▼                       ▼
-                   LINE Push API           LINE Reply API
-                   (send alerts)          (reply to user)
-                          │                       ▲
-                          ▼                       │
-                    ┌──────────┐          ┌──────────────┐
-                    │ Your LINE │          │ LINE Server   │
-                    │  phone    │ ────────►│ (webhook      │
-                    └──────────┘  message  │  callback)    │
-                                          └──────────────┘
+  any source ──► Integrations ──► Line Notification Bot ──► LINE
+                 (pluggable)       (Flask + gunicorn)
+
+  Grafana      ─► POST /webhook/monitoring ─┐
+  CI/CD        ─► POST /webhook/<custom>  ──┼─► format_payload() ─► LINE Push API
+  Cron/scripts ─► POST /notify (generic)  ──┘
+  LINE server  ─► POST /callback ◄─ LINE Reply API (chat commands)
+
+  Integration contract:
+    name: str
+    format_payload(payload) -> IntegrationResult
+    register_commands()     # optional chat commands
+```
+
+## Project Layout
+
+```
+line-alert-bot/
+├── app.py                          # Flask application (endpoints)
+├── line_notification_bot/
+│   ├── core/
+│   │   ├── config.py               # Env-driven configuration
+│   │   ├── line_client.py          # LINE Push/Reply client + signature verify
+│   │   └── commands.py             # Chat command registry & dispatcher
+│   └── integrations/
+│       ├── registry.py             # Integration protocol & auto-loader
+│       ├── monitoring.py           # Grafana/Prometheus integration
+│       └── generic.py              # Universal /notify fallback integration
+├── tests/                          # pytest suite (31 tests)
+│   ├── conftest.py                 # Shared fixtures
+│   ├── test_app.py                 # Endpoint tests (notify/webhook/callback)
+│   ├── test_commands.py            # Chat command framework tests
+│   └── test_integrations.py        # Formatting + registry tests
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── requirements-dev.txt
+├── .env.example
+└── README.md / README.zh-TW.md
 ```
 
 ## Prerequisites
 
 - Docker & Docker Compose
-- Grafana (v9+ with Unified Alerting)
+- (Optional, for `monitoring` integration) Grafana v9+ with Unified Alerting
 - A reverse proxy (Caddy, Nginx, Traefik, etc.) to expose `/callback` publicly
 - A [LINE Official Account](https://manager.line.biz/) with Messaging API enabled
 
@@ -61,7 +81,7 @@ Since LINE Notify was deprecated in March 2025, this project uses the **LINE Mes
 3. Obtain:
    - **Channel Access Token**
    - **Channel Secret**
-   - **Your LINE User ID** (found in Channel → Basic settings, or send any message to the bot and check the callback logs)
+   - **Push target ID(s)** — your LINE User ID (Channel → Basic settings), or add the bot as a friend and send it a message, then check the callback logs for your `userId`
 
 ### 2. Configure Environment
 
@@ -73,14 +93,16 @@ cp .env.example .env
 ```env
 LINE_CHANNEL_ACCESS_TOKEN=<your_channel_access_token>
 LINE_CHANNEL_SECRET=<your_channel_secret>
-LINE_USER_ID=<your_line_user_id>
 
-# Optional: for bidirectional "alerts" command
+# One or more targets, comma-separated
+LINE_TARGET_IDS=<your_line_user_id>
+# (legacy single-target LINE_USER_ID also works)
+
+# Optional: enable the monitoring "alerts" chat command
 GRAFANA_TOKEN=<grafana_service_account_token>
 
-# Optional: override defaults
-GRAFANA_URL=http://grafana:3000
-PROMETHEUS_URLS=http://prometheus:9090
+# Optional: protect the generic /notify endpoint
+NOTIFY_SECRET=<random_string>
 ```
 
 ### 3. Deploy
@@ -92,9 +114,10 @@ docker compose up -d --build
 Verify:
 ```bash
 curl http://localhost:5000/health
+curl http://localhost:5000/integrations
 ```
 
-All `*_configured` fields should be `true`.
+`line_configured` should be `true`, and `/integrations` lists all loaded modules.
 
 ### 4. Set Up LINE Webhook URL
 
@@ -108,7 +131,9 @@ Enable **Use webhook** and click **Verify** (should return 200).
 
 > If using a path prefix (e.g., `https://grafana.example.com/line-bot/callback`), configure your reverse proxy to strip the prefix and forward to port 5000.
 
-### 5. Configure Grafana Contact Point
+### 5. Connect an Integration
+
+#### Option A — Grafana (`monitoring` integration)
 
 In Grafana UI → **Alerting** → **Contact points** → **+ Add contact point**:
 
@@ -116,42 +141,80 @@ In Grafana UI → **Alerting** → **Contact points** → **+ Add contact point*
 |-------|-------|
 | Name | `LINE Bot` |
 | Integration | Webhook |
-| URL | `http://line-alert-bot:5000/push` (same Docker network) or `https://<your-domain>/push` (remote) |
+| URL | `http://line-notification-bot:5000/webhook/monitoring` (same Docker network) or `https://<your-domain>/webhook/monitoring` (remote) |
 | HTTP Method | `POST` |
 
 Click **Test** to verify your LINE receives a test message, then **Save**.
 
-### 6. (Optional) Set Up Grafana Service Account Token
+For the `alerts` chat command, create a Grafana service account token (Administration → Service Accounts, Role `Viewer`+) and set `GRAFANA_TOKEN`.
 
-To enable the `alerts` bidirectional command:
+#### Option B — Any other source (`generic`)
 
-1. Grafana → **Administration** → **Service Accounts** → **+ Add**
-   - Role: `Viewer` (minimum)
-2. Generate a token and add it to `.env` as `GRAFANA_TOKEN`
-3. Restart: `docker compose restart`
+```bash
+curl -X POST http://localhost:5000/notify \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${NOTIFY_SECRET}" \
+  -d '{"text": "Deploy finished ✅"}'
+```
+
+Or a structured payload (rendered as a key/value summary):
+
+```bash
+curl -X POST http://localhost:5000/notify \
+  -H 'Content-Type: application/json' \
+  -d '{"title": "Nightly Backup", "host": "db-01", "status": "ok"}'
+```
+
+#### Option C — Write your own integration
+
+Create `line_notification_bot/integrations/my_thing.py`:
+
+```python
+from ..core.commands import register_command
+from .registry import IntegrationResult
+
+
+class MyThingIntegration:
+    name = "my_thing"
+
+    def format_payload(self, payload: dict) -> IntegrationResult:
+        text = f"🚀 {payload.get('event', 'Event')} — {payload.get('detail', '')}"
+        return IntegrationResult(ok=True, messages=[{"type": "text", "text": text}])
+
+    def register_commands(self) -> None:
+        register_command("mything", "查詢 my_thing 狀態", lambda a, t: "OK")
+
+
+integration = MyThingIntegration()
+```
+
+Rebuild (`docker compose up -d --build`) — it is auto-discovered and exposed at `POST /webhook/my_thing`.
 
 ## LINE Chat Commands
 
 Once the webhook is connected, send these text messages to your bot in LINE:
 
-| Command | Description |
-|---------|-------------|
-| `status` | Query Grafana & Prometheus health status |
-| `alerts` | List currently firing alerts (requires `GRAFANA_TOKEN`) |
-| `help` | Show available commands |
+| Command | Source | Description |
+|---------|--------|-------------|
+| `help` | core | Show available commands |
+| `ping` | generic | Check the bot is alive |
+| `status` | monitoring | Query Grafana & Prometheus health status |
+| `alerts` | monitoring | List currently firing alerts (requires `GRAFANA_TOKEN`) |
 
 ## API Endpoints
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/health` | GET | Health check / config status |
-| `/push` | POST | Receive Grafana webhook alerts (internal) |
+| `/integrations` | GET | List loaded integrations |
+| `/notify` | POST | Generic push: any JSON → LINE (bearer-token optional) |
+| `/webhook/<name>` | POST | Inbound webhook for a named integration |
 | `/callback` | POST | Receive LINE webhook callbacks (public) |
 
-### Example: Manual Push Test
+### Example: Monitoring Integration Test
 
 ```bash
-curl -X POST http://localhost:5000/push \
+curl -X POST http://localhost:5000/webhook/monitoring \
   -H 'Content-Type: application/json' \
   -d '{
     "status": "firing",
@@ -166,7 +229,7 @@ curl -X POST http://localhost:5000/push \
 
 Expected response:
 ```json
-{"status": "sent"}
+{"status": "sent", "targets": 1}
 ```
 
 ## Configuration Reference
@@ -177,12 +240,32 @@ All configuration is via environment variables:
 |----------|----------|---------|-------------|
 | `LINE_CHANNEL_ACCESS_TOKEN` | ✅ | — | LINE Messaging API channel access token |
 | `LINE_CHANNEL_SECRET` | ✅ | — | LINE Messaging API channel secret |
-| `LINE_USER_ID` | ✅ | — | Target LINE user ID for push messages |
-| `GRAFANA_URL` | ❌ | `http://grafana:3000` | Grafana URL for bidirectional queries |
+| `LINE_TARGET_IDS` | ✅* | — | Push target(s), comma-separated User/Group IDs |
+| `LINE_USER_ID` | ❌ | — | Legacy single push target (used if `LINE_TARGET_IDS` empty) |
+| `ENABLED_INTEGRATIONS` | ❌ | *(all)* | Comma-separated allowlist, e.g. `monitoring,generic` |
+| `NOTIFY_SECRET` | ❌ | — | Bearer token required on `POST /notify` |
+| `GRAFANA_URL` | ❌ | `http://grafana:3000` | Grafana URL (monitoring integration) |
 | `GRAFANA_TOKEN` | ❌ | — | Grafana service account token (for `alerts` command) |
 | `PROMETHEUS_URLS` | ❌ | `http://prometheus:9090` | Comma-separated Prometheus URLs for health check |
 | `LOG_LEVEL` | ❌ | `INFO` | Python logging level |
 | `PORT` | ❌ | `5000` | Flask listen port |
+| `TZ` | ❌ | `UTC` | Container timezone |
+| `LINE_MAX_TEXT_LENGTH` | ❌ | `4800` | Auto-split threshold for long messages |
+| `HTTP_TIMEOUT` | ❌ | `10` | Outbound HTTP timeout (seconds) |
+
+\* At least one of `LINE_TARGET_IDS` / `LINE_USER_ID` must be set.
+
+## Testing
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest tests/ -v
+```
+
+The suite covers endpoint behaviour (`/notify`, `/webhook/<name>`, `/callback`),
+chat command dispatch, integration payload formatting, LINE signature
+verification, and registry auto-discovery — all without real network calls
+(LINE push/reply is stubbed).
 
 ## Reverse Proxy Examples
 
@@ -223,12 +306,12 @@ location /line-bot/ {
 
 ## Docker Networking
 
-If Grafana and line-alert-bot are on the **same Docker network**, use the container name as the webhook URL:
+If your monitoring stack and the bot are on the **same Docker network**, use the container name as the webhook URL:
 
 ```yaml
 # docker-compose.yml
 services:
-  line-alert-bot:
+  line-notification-bot:
     # ...
     networks:
       - monitoring
@@ -239,15 +322,15 @@ networks:
     name: net_prometheus  # or your Grafana network name
 ```
 
-Grafana contact point URL: `http://line-alert-bot:5000/push`
+Grafana contact point URL: `http://line-notification-bot:5000/webhook/monitoring`
 
-If Grafana is on a **remote server**, use the public URL: `https://<your-domain>/push`
+If Grafana is on a **remote server**, use the public URL: `https://<your-domain>/webhook/monitoring`
 
 ## Management
 
 ```bash
 # View logs
-docker logs line-alert-bot -f
+docker logs line-notification-bot -f
 
 # Restart
 docker compose restart
@@ -264,15 +347,7 @@ curl https://<your-domain>/health
 
 ## Project Structure
 
-```
-line-alert-bot/
-├── app.py              # Flask application
-├── Dockerfile          # Container image definition
-├── docker-compose.yml  # Docker Compose configuration
-├── requirements.txt    # Python dependencies
-├── .env.example        # Environment variable template
-└── README.md           # This file
-```
+See [Project Layout](#project-layout) above.
 
 ## Tech Stack
 
