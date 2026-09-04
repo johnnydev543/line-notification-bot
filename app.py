@@ -122,6 +122,20 @@ def integration_webhook(name: str):
     return _dispatch_to_integration(name, payload)
 
 
+@app.route("/push", methods=["POST"])
+def push_legacy():
+    """Deprecated alias for /webhook/monitoring (backwards compatibility).
+
+    Kept so existing Grafana contact points pointing at ``/push`` keep
+    working after the rename. Prefer ``/webhook/monitoring`` in new setups.
+    """
+    logger.info("Deprecated /push called — use /webhook/monitoring instead")
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({"error": "invalid JSON"}), 400
+    return _dispatch_to_integration("monitoring", payload)
+
+
 def _dispatch_to_integration(name: str, payload: dict):
     """Format an inbound payload and push it to LINE targets."""
     integration = registry.get(name)

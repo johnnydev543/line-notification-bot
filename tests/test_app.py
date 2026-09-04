@@ -73,6 +73,25 @@ def test_webhook_rejects_invalid_json(client):
     assert resp.status_code == 400
 
 
+def test_legacy_push_routes_to_monitoring(configured):
+    """The deprecated /push alias still feeds the monitoring integration."""
+    app, sent = configured
+    client = app.app.test_client()
+    resp = client.post("/push", json={
+        "status": "firing",
+        "alerts": [{"status": "firing", "labels": {"alertname": "Legacy"}}],
+        "commonLabels": {"alertname": "Legacy"},
+    })
+    assert resp.status_code == 200
+    assert resp.get_json() == {"status": "sent", "targets": 1}
+    assert "Grafana Alert: Legacy" in sent[0][1][0]["text"]
+
+
+def test_legacy_push_rejects_invalid_json(client):
+    resp = client.post("/push", data="not json", content_type="application/json")
+    assert resp.status_code == 400
+
+
 # ---------------------------------------------------------------------------
 # /notify (generic)
 # ---------------------------------------------------------------------------
