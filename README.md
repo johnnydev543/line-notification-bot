@@ -4,12 +4,15 @@
 
 A **generic, extensible notification bot** built on the **LINE Messaging API**. It accepts webhook payloads from *any* source and pushes messages to LINE, with optional **bidirectional interaction** (query things from LINE chat).
 
+**Designed to be lightweight**: the whole bot is a single small Flask container that idles at roughly **~60 MB RAM** and a few MB of image — light enough for a Raspberry Pi 3 with limited memory. No database, no background workers; integrations are just plain Python modules, so adding a new source is a ~20-line file plus a rebuild.
+
 **Grafana / Prometheus integration is just one of the available integrations** (`monitoring`) — the bot core does not depend on any specific platform. Write your own integration in ~20 lines to connect anything else.
 
 Since LINE Notify was deprecated in March 2025, this project uses the **LINE Messaging API** (via LINE Official Account) to deliver messages.
 
 ## Features
 
+- 🪶 **Lightweight** — single Flask + gunicorn container, ~60 MB RAM, no DB/queue/worker; fits small boards like a Raspberry Pi 3
 - 🔔 **Generic webhook bridge** — any JSON source → LINE message
 - 🧩 **Pluggable integrations** — drop a module in `line_notification_bot/integrations/`, auto-discovered at startup
 - 📡 **Built-in integrations**:

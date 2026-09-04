@@ -4,12 +4,15 @@
 
 一個**通用、可擴充的通知機器人**，基於 **LINE Messaging API**。接收來自*任何*來源的 webhook payload 並推播到 LINE，支援選配的**雙向互動**（在 LINE 聊天中查詢資訊）。
 
+**主打輕量化**：整個 bot 是單一小型 Flask 容器，閒置時記憶體約 **~60 MB**、映像檔僅數 MB — 輕到可以跑在記憶體有限的 Raspberry Pi 3 上。沒有資料庫、沒有背景 worker；整合模組只是純 Python 檔案，新增一個來源只需約 20 行程式碼加上重新 build。
+
 **Grafana / Prometheus 整合只是其中一個整合模組**（`monitoring`）— bot 核心不依賴任何特定平台。撰寫約 20 行程式碼即可接入任何其他來源。
 
 由於 LINE Notify 已於 2025 年 3 月終止服務，本專案改用 **LINE Messaging API**（透過 LINE Official Account）來發送訊息。
 
 ## 功能特色
 
+- 🪶 **輕量化** — 單一 Flask + gunicorn 容器，約 60 MB RAM，無資料庫／佇列／worker；可跑在 Raspberry Pi 3 這類小型裝置上
 - 🔔 **通用 webhook 橋接** — 任何 JSON 來源 → LINE 訊息
 - 🧩 **可插拔整合** — 在 `line_notification_bot/integrations/` 放入模組，啟動時自動載入
 - 📡 **內建整合**:
