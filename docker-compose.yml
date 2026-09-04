@@ -24,14 +24,8 @@ services:
       # === 其他 ===
       - TZ=${TZ:-Asia/Taipei}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    networks:
-      monitoring:
-        aliases:
-          # Legacy container name so existing Grafana contact points
-          # (http://line-alert-bot:5000/...) keep resolving after the rename.
-          - line-alert-bot
     ports:
-      - 5000:5000
+      - "5000:5000"
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]
       interval: 30s
