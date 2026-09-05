@@ -2,7 +2,6 @@
 
 from line_notification_bot.integrations.generic import format_generic_payload
 from line_notification_bot.integrations.monitoring import (
-    detect_source,
     extract_link,
     format_grafana_alert,
 )
@@ -51,24 +50,6 @@ def test_grafana_link_prefers_panel_then_dashboard_then_generator():
     assert extract_link({}) == ""
 
 
-def test_grafana_source_detection(monkeypatch):
-    monkeypatch.setenv(
-        "ALERT_SOURCES",
-        "10.0.0.5=Home Grafana,grafana.prod.example=Prod",
-    )
-    # Re-import module-level mappings for the test.
-    from line_notification_bot.integrations import monitoring
-    monitoring._SOURCE_LABELS = monitoring._parse_mapping("ALERT_SOURCES")
-
-    assert detect_source({"externalURL": "http://10.0.0.5:3000/"}) == "Home Grafana"
-    assert detect_source({"externalURL": "https://grafana.prod.example/"}) == "Prod"
-    # Receiver-name matching works even without an externalURL.
-    assert detect_source({"receiver": "LINE Bot [grafana.prod.example]", "externalURL": ""}) == "Prod"
-    # Unknown hosts fall back to the hostname itself.
-    assert detect_source({"externalURL": "https://grafana.foo.io/"}) == "🖥️ grafana.foo.io"
-    assert detect_source({}) == "🖥️ unknown"
-
-
 def test_grafana_format_resolved():
     payload = dict(GRAFANA_PAYLOAD, status="resolved")
     text = format_grafana_alert(payload)
@@ -76,50 +57,17 @@ def test_grafana_format_resolved():
     assert "Status: resolved" in text
 
 
-def test_grafana_preformatted_text_passthrough(monkeypatch):
-    """A custom payload with a `text` field is sent to LINE verbatim."""
-    monkeypatch.setenv(
-        "ALERT_URL_REWRITES",
-        "http://10.0.0.5:3000=https://grafana.prod.example",
-    )
-    from line_notification_bot.integrations import monitoring
-    monitoring._URL_REWRITES = monitoring._parse_mapping("ALERT_URL_REWRITES")
+def test_grafana_preformatted_text_passthrough():
+    """A custom payload with a `text` field is sent to LINE verbatim.
 
-    payload = {
-        "text": "🔥 🏠 Home｜Grafana Alert: X\nhttps://10.0.0.5:3000/alerting/list",
-    }
-    text = format_grafana_alert(payload)
-    assert text.startswith("🔥 🏠 Home｜Grafana Alert: X")
-    assert "https://grafana.prod.example/alerting/list" in text
-
+    The layout, source label and domains are owned by the Grafana template;
+    the bot must not touch the content (not even URL rewriting).
+    """
+    body = "🔥 Prod | Grafana Alert: X\n\n🔗 https://grafana.prod.example/alerting/list"
+    assert format_grafana_alert({"text": body}) == body
     # Whitespace-only text is ignored and falls back to formatting.
     fallback = format_grafana_alert({"text": "   ", **GRAFANA_PAYLOAD})
     assert "Grafana Alert: HighCPU" in fallback
-
-
-def test_grafana_internal_urls_rewritten_to_public(monkeypatch):
-    monkeypatch.setenv(
-        "ALERT_URL_REWRITES",
-        "http://10.0.0.5:3000=https://grafana.prod.example",
-    )
-    from line_notification_bot.integrations import monitoring
-    monitoring._URL_REWRITES = monitoring._parse_mapping("ALERT_URL_REWRITES")
-
-    payload = {
-        "status": "firing",
-        "alerts": [
-            {
-                "status": "firing",
-                "labels": {"alertname": "X"},
-                "generatorURL": "http://10.0.0.5:3000/alerting/list",
-            }
-        ],
-        "commonLabels": {"alertname": "X"},
-        "externalURL": "http://10.0.0.5:3000/",
-    }
-    text = format_grafana_alert(payload)
-    assert "https://grafana.prod.example/alerting/list" in text
-    assert "10.0.0.5" not in text.split("｜")[0]  # source label still identifies host
 
 
 def test_grafana_truncates_long_alert_lists():

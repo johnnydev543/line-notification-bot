@@ -250,8 +250,6 @@ curl -X POST http://localhost:5000/webhook/monitoring \
 | `GRAFANA_URL` | ❌ | `http://grafana:3000` | Grafana URL（monitoring 整合用） |
 | `GRAFANA_TOKEN` | ❌ | — | Grafana service account token（`alerts` 指令用） |
 | `PROMETHEUS_URLS` | ❌ | `http://prometheus:9090` | 逗號分隔的多個 Prometheus URL（健康檢查用） |
-| `ALERT_SOURCES` | ❌ | — | 逗號分隔的 `needle=標籤` 配對，標示告警來自哪個 Grafana（比對 receiver 名稱 / externalURL host） |
-| `ALERT_URL_REWRITES` | ❌ | — | 逗號分隔的 `內部URL=公開URL` 配對，把訊息中的內網連結改寫成公開網址 |
 | `LOG_LEVEL` | ❌ | `INFO` | Python logging 等級 |
 | `PORT` | ❌ | `5000` | Flask 監聽 port |
 | `TZ` | ❌ | `UTC` | 容器時區 |

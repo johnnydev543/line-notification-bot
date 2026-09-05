@@ -92,72 +92,6 @@ def query_grafana_alerts() -> str:
 # ---------------------------------------------------------------------------
 # Inbound: Grafana webhook payload → LINE message
 # ---------------------------------------------------------------------------
-# Source identification and URL normalization are deployment-specific and
-# therefore configurable via environment variables instead of hardcoding
-# anyone's hostnames here:
-#
-#   ALERT_SOURCES="10.0.0.5=Home Grafana,grafana.example.com=Prod"
-#   ALERT_URL_REWRITES="http://10.0.0.5:3000=https://grafana.example.com"
-#
-# Each mapping is a comma-separated list of "<needle>=<label-or-url>" pairs.
-# For ALERT_SOURCES the needle is matched against the receiver name and the
-# externalURL (host part); the label is what gets shown in LINE messages.
-# For ALERT_URL_REWRITES the needle is a URL prefix to replace with the value.
-
-def _parse_mapping(var_name: str) -> list[tuple[str, str]]:
-    pairs = []
-    for item in os.environ.get(var_name, "").split(","):
-        item = item.strip()
-        if "=" in item:
-            needle, value = item.split("=", 1)
-            needle, value = needle.strip(), value.strip()
-            if needle:
-                pairs.append((needle, value))
-    # Longest needles first so "grafana.home.example" wins over "home".
-    pairs.sort(key=lambda pair: len(pair[0]), reverse=True)
-    return pairs
-
-
-_SOURCE_LABELS = _parse_mapping("ALERT_SOURCES")
-_URL_REWRITES = _parse_mapping("ALERT_URL_REWRITES")
-
-
-def detect_source(payload: dict) -> str:
-    """Identify which Grafana instance sent this webhook.
-
-    Matched against the receiver name first (contact points may be named per
-    source, e.g. "LINE Bot [prod]"), then the externalURL host. Falls back to
-    the externalURL hostname itself so unknown instances are still labelled.
-    """
-    receiver = str(payload.get("receiver", ""))
-    external_url = str(payload.get("externalURL", ""))
-    host = external_url.split("//")[-1].split("/")[0].split(":")[0] if external_url else ""
-
-    for needle, label in _SOURCE_LABELS:
-        if needle in receiver or needle in external_url or needle == host:
-            return label
-
-    return f"🖥️ {host or 'unknown'}"
-
-
-def _normalize_url(text: str) -> str:
-    """Rewrite internal-only URLs to public ones (if configured).
-
-    Matching ignores the URL scheme: Grafana may emit either http:// or
-    https:// for the same host:port depending on how the rule URL was built,
-    while the configured needle may use only one. Rewriting still preserves
-    the configured (public) URL verbatim once a host[:port] match hits.
-    """
-    for internal, public in _URL_REWRITES:
-        text = text.replace(internal, public)
-        # Also match the scheme-less variant so https://internal... still maps.
-        if "//" in internal:
-            schemeless = internal.split("//", 1)[1]
-            if schemeless and schemeless in text:
-                text = text.replace(schemeless, public.split("//", 1)[1], 1)
-    return text
-
-
 def extract_link(payload: dict) -> str:
     """Best-effort extraction of a clickable link for the alert group.
 
@@ -179,13 +113,13 @@ def format_grafana_alert(payload: dict) -> str:
     If the payload carries a pre-formatted ``text`` field (Grafana webhook
     contact points can be configured with a "Title"/"Message" template or a
     full "Custom Payload" that includes one), it is used verbatim: the bot
-    then acts as a dumb pipe and the layout is owned by Grafana. Only the
-    optional URL rewriting is applied. Otherwise the payload is the standard
-    Grafana Alertmanager webhook JSON and gets formatted here.
+    then acts as a dumb pipe and the layout — including the source label and
+    any domain rewriting — is owned by Grafana. Otherwise the payload is the
+    standard Grafana Alertmanager webhook JSON and gets formatted here.
     """
     preformatted = payload.get("text")
     if isinstance(preformatted, str) and preformatted.strip():
-        return _normalize_url(preformatted)
+        return preformatted
 
     alerts = payload.get("alerts", [])
     status = payload.get("status", "unknown")
@@ -195,9 +129,8 @@ def format_grafana_alert(payload: dict) -> str:
     resolved_count = sum(1 for a in alerts if a.get("status") == "resolved")
 
     icon = "🔥" if status == "firing" else "✅" if status == "resolved" else "⚠️"
-    source = detect_source(payload)
 
-    lines = [f"{icon} {source}｜Grafana Alert: {alert_name}"]
+    lines = [f"{icon} Grafana Alert: {alert_name}"]
     if severity:
         lines.append(f"Severity: {severity}")
     lines.append(f"Status: {status}")
@@ -221,7 +154,7 @@ def format_grafana_alert(payload: dict) -> str:
 
     link = extract_link(payload)
     if link:
-        lines.append(f"\n🔗 {_normalize_url(link)}")
+        lines.append(f"\n🔗 {link}")
 
     return "\n".join(lines)
 
