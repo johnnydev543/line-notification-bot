@@ -92,6 +92,76 @@ def query_grafana_alerts() -> str:
 # ---------------------------------------------------------------------------
 # Inbound: Grafana webhook payload → LINE message
 # ---------------------------------------------------------------------------
+# Source identification and URL normalization are deployment-specific and
+# therefore configurable via environment variables instead of hardcoding
+# anyone's hostnames here:
+#
+#   ALERT_SOURCES="10.0.0.5=Home Grafana,grafana.example.com=Prod"
+#   ALERT_URL_REWRITES="http://10.0.0.5:3000=https://grafana.example.com"
+#
+# Each mapping is a comma-separated list of "<needle>=<label-or-url>" pairs.
+# For ALERT_SOURCES the needle is matched against the receiver name and the
+# externalURL (host part); the label is what gets shown in LINE messages.
+# For ALERT_URL_REWRITES the needle is a URL prefix to replace with the value.
+
+def _parse_mapping(var_name: str) -> list[tuple[str, str]]:
+    pairs = []
+    for item in os.environ.get(var_name, "").split(","):
+        item = item.strip()
+        if "=" in item:
+            needle, value = item.split("=", 1)
+            needle, value = needle.strip(), value.strip()
+            if needle:
+                pairs.append((needle, value))
+    # Longest needles first so "grafana.home.example" wins over "home".
+    pairs.sort(key=lambda pair: len(pair[0]), reverse=True)
+    return pairs
+
+
+_SOURCE_LABELS = _parse_mapping("ALERT_SOURCES")
+_URL_REWRITES = _parse_mapping("ALERT_URL_REWRITES")
+
+
+def detect_source(payload: dict) -> str:
+    """Identify which Grafana instance sent this webhook.
+
+    Matched against the receiver name first (contact points may be named per
+    source, e.g. "LINE Bot [prod]"), then the externalURL host. Falls back to
+    the externalURL hostname itself so unknown instances are still labelled.
+    """
+    receiver = str(payload.get("receiver", ""))
+    external_url = str(payload.get("externalURL", ""))
+    host = external_url.split("//")[-1].split("/")[0].split(":")[0] if external_url else ""
+
+    for needle, label in _SOURCE_LABELS:
+        if needle in receiver or needle in external_url or needle == host:
+            return label
+
+    return f"🖥️ {host or 'unknown'}"
+
+
+def _normalize_url(text: str) -> str:
+    """Rewrite internal-only URLs to public ones (if configured)."""
+    for internal, public in _URL_REWRITES:
+        text = text.replace(internal, public)
+    return text
+
+
+def extract_link(payload: dict) -> str:
+    """Best-effort extraction of a clickable link for the alert group.
+
+    Grafana puts URLs per-alert (dashboardURL / panelURL / generatorURL);
+    the legacy top-level "panelUrl" key never exists in real payloads.
+    Preference: panel > dashboard > generator (rule editor) > externalURL.
+    """
+    for key in ("panelURL", "dashboardURL", "generatorURL"):
+        for alert in payload.get("alerts", []):
+            url = str(alert.get(key) or "")
+            if url:
+                return url
+    return str(payload.get("externalURL") or "")
+
+
 def format_grafana_alert(payload: dict) -> str:
     """Convert a Grafana Alertmanager webhook payload into LINE text."""
     alerts = payload.get("alerts", [])
@@ -102,8 +172,9 @@ def format_grafana_alert(payload: dict) -> str:
     resolved_count = sum(1 for a in alerts if a.get("status") == "resolved")
 
     icon = "🔥" if status == "firing" else "✅" if status == "resolved" else "⚠️"
+    source = detect_source(payload)
 
-    lines = [f"{icon} Grafana Alert: {alert_name}"]
+    lines = [f"{icon} {source}｜Grafana Alert: {alert_name}"]
     if severity:
         lines.append(f"Severity: {severity}")
     lines.append(f"Status: {status}")
@@ -113,18 +184,21 @@ def format_grafana_alert(payload: dict) -> str:
         a_status = alert.get("status", "")
         a_name = alert.get("labels", {}).get("alertname", "")
         a_instance = alert.get("labels", {}).get("instance", "")
+        a_value = alert.get("valueString") or ""
         a_icon = "🔥" if a_status == "firing" else "✅"
         detail = f"  {a_icon} {a_name}"
-        if a_instance:
+        if a_value:
+            detail += f"（{a_value}）"
+        elif a_instance:
             detail += f" ({a_instance})"
         lines.append(detail)
 
     if len(alerts) > 5:
         lines.append(f"  ... 還有 {len(alerts) - 5} 個")
 
-    panel_url = payload.get("panelUrl", "")
-    if panel_url:
-        lines.append(f"\n🔗 {panel_url}")
+    link = extract_link(payload)
+    if link:
+        lines.append(f"\n🔗 {_normalize_url(link)}")
 
     return "\n".join(lines)
 

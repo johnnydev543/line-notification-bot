@@ -250,6 +250,8 @@ All configuration is via environment variables:
 | `GRAFANA_URL` | ❌ | `http://grafana:3000` | Grafana URL (monitoring integration) |
 | `GRAFANA_TOKEN` | ❌ | — | Grafana service account token (for `alerts` command) |
 | `PROMETHEUS_URLS` | ❌ | `http://prometheus:9090` | Comma-separated Prometheus URLs for health check |
+| `ALERT_SOURCES` | ❌ | — | Comma-separated `needle=label` pairs to label which Grafana instance sent an alert (matched against receiver name / externalURL host) |
+| `ALERT_URL_REWRITES` | ❌ | — | Comma-separated `internalURL=publicURL` pairs to rewrite internal-only links in alert messages |
 | `LOG_LEVEL` | ❌ | `INFO` | Python logging level |
 | `PORT` | ❌ | `5000` | Flask listen port |
 | `TZ` | ❌ | `UTC` | Container timezone |
