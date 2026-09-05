@@ -201,8 +201,8 @@ Webhook 連接後，在 LINE 中傳送以下文字訊息給 bot：
 |------|------|------|
 | `help` | 核心 | 顯示可用指令 |
 | `ping` | generic | 測試 bot 是否存活 |
-| `status` | monitoring | 查詢 Grafana & Prometheus 健康狀態 |
-| `alerts` | monitoring | 列出目前觸發中的告警（需設定 `GRAFANA_TOKEN`） |
+| `status` | monitoring | 查詢 Grafana & Prometheus 健康狀態（僅在設定 `GRAFANA_URL` 時註冊） |
+| `alerts` | monitoring | 列出目前觸發中的告警（僅在設定 `GRAFANA_URL` 時註冊；需設定 `GRAFANA_TOKEN`） |
 
 ## API 端點
 
@@ -247,9 +247,9 @@ curl -X POST http://localhost:5000/webhook/monitoring \
 | `LINE_USER_ID` | ❌ | — | 舊版單一推播目標（`LINE_TARGET_IDS` 未設定時使用） |
 | `ENABLED_INTEGRATIONS` | ❌ | （全部） | 逗號分隔的允許清單，例如 `monitoring,generic` |
 | `NOTIFY_SECRET` | ❌ | — | `POST /notify` 需帶的 bearer token |
-| `GRAFANA_URL` | ❌ | `http://grafana:3000` | Grafana URL（monitoring 整合用） |
+| `GRAFANA_URL` | ❌ | *(未設定)* | Grafana URL — 設定後才會啟用 `status`/`alerts` 指令 |
 | `GRAFANA_TOKEN` | ❌ | — | Grafana service account token（`alerts` 指令用） |
-| `PROMETHEUS_URLS` | ❌ | `http://prometheus:9090` | 逗號分隔的多個 Prometheus URL（健康檢查用） |
+| `PROMETHEUS_URLS` | ❌ | *(未設定)* | 逗號分隔的多個 Prometheus URL（健康檢查用） |
 | `LOG_LEVEL` | ❌ | `INFO` | Python logging 等級 |
 | `PORT` | ❌ | `5000` | Flask 監聽 port |
 | `TZ` | ❌ | `UTC` | 容器時區 |

@@ -1,15 +1,17 @@
-"""Grafana + Prometheus monitoring integration.
+"""Grafana monitoring integration (optional module).
 
-Demonstrates how to build an integration on top of the generic bot:
+Inbound:  Grafana Alerting webhook → ``/webhook/monitoring`` → LINE
+Outbound: ``status`` / ``alerts`` chat commands query the stack
+          (only registered when GRAFANA_URL is explicitly set).
 
-* Inbound:  Grafana Alerting webhook → ``/webhook/monitoring`` → LINE
-* Outbound: chat commands ``status`` and ``alerts`` query the stack.
+The core bot knows nothing about Grafana — this whole module is optional
+and can be removed or disabled via ``ENABLED_INTEGRATIONS`` without
+affecting anything else.
 
-Configuration (all optional — integration degrades gracefully):
-
-    GRAFANA_URL      default http://grafana:3000
-    GRAFANA_TOKEN    service account token (needed for ``alerts`` command)
-    PROMETHEUS_URLS  comma-separated, default http://prometheus:9090
+Layout note: when Grafana's contact point sends a pre-formatted ``text``
+field (custom payload), it is forwarded to LINE verbatim — the template
+owns the layout, source label and domains. The formatter below is only a
+plain fallback for standard webhook payloads.
 """
 
 from __future__ import annotations
@@ -25,17 +27,19 @@ from .registry import IntegrationResult
 
 logger = logging.getLogger("line_notification_bot.integrations.monitoring")
 
-GRAFANA_URL = os.environ.get("GRAFANA_URL", "http://grafana:3000")
+# Outbound chat commands are opt-in: only when the deployment explicitly
+# configures a Grafana to query do we register `status`/`alerts`.
+GRAFANA_URL = os.environ.get("GRAFANA_URL", "")
 GRAFANA_TOKEN = os.environ.get("GRAFANA_TOKEN", "")
 PROMETHEUS_URLS = [
     url.strip()
-    for url in os.environ.get("PROMETHEUS_URLS", "http://prometheus:9090").split(",")
+    for url in os.environ.get("PROMETHEUS_URLS", "").split(",")
     if url.strip()
 ]
 
 
 # ---------------------------------------------------------------------------
-# Outbound: query helpers (chat commands)
+# Outbound: query helpers (chat commands; only used when GRAFANA_URL set)
 # ---------------------------------------------------------------------------
 def query_grafana_health() -> str:
     try:
@@ -172,6 +176,10 @@ class MonitoringIntegration:
 
     # ------------------------------------------------------------------
     def register_commands(self) -> None:
+        if not GRAFANA_URL:
+            # Deployment does not use the monitoring stack; skip the
+            # outbound commands entirely.
+            return
         register_command("status", "查詢 Grafana & Prometheus 健康狀態", _cmd_status)
         register_command("alerts", "查詢目前觸發中的告警", _cmd_alerts)
 

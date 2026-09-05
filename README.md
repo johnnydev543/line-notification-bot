@@ -201,8 +201,8 @@ Once the webhook is connected, send these text messages to your bot in LINE:
 |---------|--------|-------------|
 | `help` | core | Show available commands |
 | `ping` | generic | Check the bot is alive |
-| `status` | monitoring | Query Grafana & Prometheus health status |
-| `alerts` | monitoring | List currently firing alerts (requires `GRAFANA_TOKEN`) |
+| `status` | monitoring | Query Grafana & Prometheus health status (only when `GRAFANA_URL` is set) |
+| `alerts` | monitoring | List currently firing alerts (only when `GRAFANA_URL` is set; requires `GRAFANA_TOKEN`) |
 
 ## API Endpoints
 
@@ -247,9 +247,9 @@ All configuration is via environment variables:
 | `LINE_USER_ID` | ❌ | — | Legacy single push target (used if `LINE_TARGET_IDS` empty) |
 | `ENABLED_INTEGRATIONS` | ❌ | *(all)* | Comma-separated allowlist, e.g. `monitoring,generic` |
 | `NOTIFY_SECRET` | ❌ | — | Bearer token required on `POST /notify` |
-| `GRAFANA_URL` | ❌ | `http://grafana:3000` | Grafana URL (monitoring integration) |
+| `GRAFANA_URL` | ❌ | *(unset)* | Grafana URL — enables the `status`/`alerts` chat commands when set |
 | `GRAFANA_TOKEN` | ❌ | — | Grafana service account token (for `alerts` command) |
-| `PROMETHEUS_URLS` | ❌ | `http://prometheus:9090` | Comma-separated Prometheus URLs for health check |
+| `PROMETHEUS_URLS` | ❌ | *(unset)* | Comma-separated Prometheus URLs for health check |
 | `LOG_LEVEL` | ❌ | `INFO` | Python logging level |
 | `PORT` | ❌ | `5000` | Flask listen port |
 | `TZ` | ❌ | `UTC` | Container timezone |
