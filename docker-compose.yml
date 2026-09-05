@@ -21,6 +21,10 @@ services:
       # === 通用 /notify 端點的共享密鑰（建議設定） ===
       - NOTIFY_SECRET=${NOTIFY_SECRET:-}
 
+      # === 告警來源標示 / 內網 URL 重寫（deployment-specific） ===
+      - ALERT_SOURCES=${ALERT_SOURCES:-}
+      - ALERT_URL_REWRITES=${ALERT_URL_REWRITES:-}
+
       # === 其他 ===
       - TZ=${TZ:-Asia/Taipei}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
