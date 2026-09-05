@@ -76,6 +76,27 @@ def test_grafana_format_resolved():
     assert "Status: resolved" in text
 
 
+def test_grafana_preformatted_text_passthrough(monkeypatch):
+    """A custom payload with a `text` field is sent to LINE verbatim."""
+    monkeypatch.setenv(
+        "ALERT_URL_REWRITES",
+        "http://10.0.0.5:3000=https://grafana.prod.example",
+    )
+    from line_notification_bot.integrations import monitoring
+    monitoring._URL_REWRITES = monitoring._parse_mapping("ALERT_URL_REWRITES")
+
+    payload = {
+        "text": "🔥 🏠 Home｜Grafana Alert: X\nhttps://10.0.0.5:3000/alerting/list",
+    }
+    text = format_grafana_alert(payload)
+    assert text.startswith("🔥 🏠 Home｜Grafana Alert: X")
+    assert "https://grafana.prod.example/alerting/list" in text
+
+    # Whitespace-only text is ignored and falls back to formatting.
+    fallback = format_grafana_alert({"text": "   ", **GRAFANA_PAYLOAD})
+    assert "Grafana Alert: HighCPU" in fallback
+
+
 def test_grafana_internal_urls_rewritten_to_public(monkeypatch):
     monkeypatch.setenv(
         "ALERT_URL_REWRITES",

@@ -141,9 +141,20 @@ def detect_source(payload: dict) -> str:
 
 
 def _normalize_url(text: str) -> str:
-    """Rewrite internal-only URLs to public ones (if configured)."""
+    """Rewrite internal-only URLs to public ones (if configured).
+
+    Matching ignores the URL scheme: Grafana may emit either http:// or
+    https:// for the same host:port depending on how the rule URL was built,
+    while the configured needle may use only one. Rewriting still preserves
+    the configured (public) URL verbatim once a host[:port] match hits.
+    """
     for internal, public in _URL_REWRITES:
         text = text.replace(internal, public)
+        # Also match the scheme-less variant so https://internal... still maps.
+        if "//" in internal:
+            schemeless = internal.split("//", 1)[1]
+            if schemeless and schemeless in text:
+                text = text.replace(schemeless, public.split("//", 1)[1], 1)
     return text
 
 
@@ -163,7 +174,19 @@ def extract_link(payload: dict) -> str:
 
 
 def format_grafana_alert(payload: dict) -> str:
-    """Convert a Grafana Alertmanager webhook payload into LINE text."""
+    """Convert a Grafana Alertmanager webhook payload into LINE text.
+
+    If the payload carries a pre-formatted ``text`` field (Grafana webhook
+    contact points can be configured with a "Title"/"Message" template or a
+    full "Custom Payload" that includes one), it is used verbatim: the bot
+    then acts as a dumb pipe and the layout is owned by Grafana. Only the
+    optional URL rewriting is applied. Otherwise the payload is the standard
+    Grafana Alertmanager webhook JSON and gets formatted here.
+    """
+    preformatted = payload.get("text")
+    if isinstance(preformatted, str) and preformatted.strip():
+        return _normalize_url(preformatted)
+
     alerts = payload.get("alerts", [])
     status = payload.get("status", "unknown")
     alert_name = payload.get("commonLabels", {}).get("alertname", "Unknown Alert")
